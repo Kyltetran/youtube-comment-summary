@@ -834,9 +834,9 @@ def generate_comment_summary(video_id=None):
 
         Please write a summary highlighting the key points and general sentiment expressed in these comments.
         Focus on providing a well-rounded overview in less than 5 paragraphs.
-        
-        IMPORTANT: Make sure to cover diverse topics from the comments. Do not focus too much on any single 
-        topic or theme, even if many comments discuss it. Instead, try to capture the overall breadth of 
+
+        IMPORTANT: Make sure to cover diverse topics from the comments. Do not focus too much on any single
+        topic or theme, even if many comments discuss it. Instead, try to capture the overall breadth of
         topics and opinions present across ALL comments.
         """
 
@@ -942,54 +942,78 @@ def preprocess_comment_for_wordcloud(comment_list):
 
 # ---------------------------------- SENTIMENT ANALYSIS ----------------------------------#
 
-# def analyze_sentiment(comments):
-#     inputs = tokenizer(comments, return_tensors="pt",
-#                        padding=True, max_length = 1000,truncation=True)
-#     with torch.no_grad():
-#         outputs = hf_model(**inputs)
-#     predictions = torch.argmax(outputs.logits, dim=1)
-
-#     positives, neutrals, negatives = [], [], []
-#     for comment, label in zip(comments, predictions):
-#         label = label.item()
-#         if label == 2:
-#             positives.append(comment)
-#         elif label == 1:
-#             neutrals.append(comment)
-#         else:
-#             negatives.append(comment)
-
-#     return [len(neutrals), len(positives), len(negatives)], positives, negatives, neutrals
-
 def analyze_sentiment(comments):
-    """Analyze sentiment of comments using VADER."""
-    # Initialize the sentiment analyzer
-    analyzer = SentimentIntensityAnalyzer()
+    """Analyze sentiment of comments using HuggingFace model with batch processing."""
+    # Process comments in batches to avoid memory issues and tensor size mismatches
+    batch_size = 100
+    positives, neutrals, negatives = [], [], []
 
-    comments_positive = []
-    comments_negative = []
-    comments_neutral = []
+    for i in range(0, len(comments), batch_size):
+        batch = comments[i:i + batch_size]
 
-    # Count the number of neutral, positive, and negative comments
-    num_neutral = 0
-    num_positive = 0
-    num_negative = 0
+        try:
+            # Tokenize the batch
+            inputs = tokenizer(
+                batch,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512  # Explicitly set max length to model's limit
+            )
 
-    for comment in comments:
-        sentiment_scores = analyzer.polarity_scores(comment)
-        if sentiment_scores['compound'] >= 0.2:
-            num_positive += 1
-            comments_positive.append(comment)
-        elif sentiment_scores['compound'] <= -0.2:
-            num_negative += 1
-            comments_negative.append(comment)
-        else:
-            comments_neutral.append(comment)
-            num_neutral += 1
+            # Run model inference
+            with torch.no_grad():
+                outputs = hf_model(**inputs)
 
-    results = [num_neutral, num_positive, num_negative]
-    # Return the results and categorized comments
-    return results, comments_positive, comments_negative, comments_neutral
+            # Get predictions
+            predictions = torch.argmax(outputs.logits, dim=1)
+
+            # Categorize comments
+            for comment, label in zip(batch, predictions):
+                label = label.item()
+                if label == 2:
+                    positives.append(comment)
+                elif label == 1:
+                    neutrals.append(comment)
+                else:
+                    negatives.append(comment)
+
+        except Exception as e:
+            print(f"Error processing batch {i//batch_size}: {str(e)}")
+            # Fall back to neutral for this batch if there's an error
+            neutrals.extend(batch)
+
+    return [len(neutrals), len(positives), len(negatives)], positives, negatives, neutrals
+
+# def analyze_sentiment(comments):
+#     """Analyze sentiment of comments using VADER."""
+#     # Initialize the sentiment analyzer
+#     analyzer = SentimentIntensityAnalyzer()
+
+#     comments_positive = []
+#     comments_negative = []
+#     comments_neutral = []
+
+#     # Count the number of neutral, positive, and negative comments
+#     num_neutral = 0
+#     num_positive = 0
+#     num_negative = 0
+
+#     for comment in comments:
+#         sentiment_scores = analyzer.polarity_scores(comment)
+#         if sentiment_scores['compound'] >= 0.2:
+#             num_positive += 1
+#             comments_positive.append(comment)
+#         elif sentiment_scores['compound'] <= -0.2:
+#             num_negative += 1
+#             comments_negative.append(comment)
+#         else:
+#             comments_neutral.append(comment)
+#             num_neutral += 1
+
+#     results = [num_neutral, num_positive, num_negative]
+#     # Return the results and categorized comments
+#     return results, comments_positive, comments_negative, comments_neutral
 
 
 matplotlib.use('Agg')
@@ -1088,7 +1112,7 @@ def generate_positive_summary_from_vector(query="Summarize main point of these c
     Start the summary with bullet points right away, and do not include any other text.
     Note that just include 0-3 main points.
     Do not include any negative comments or neutral comments in the summary if they are present.
-    
+
     """
     docs = find_related_positive(query)
     context = "\n".join([doc.page_content for doc in docs])

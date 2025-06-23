@@ -3,7 +3,7 @@ import os
 import json
 import time
 import streamlit as st
-from youtube_summary_tool_copy import (
+from youtube_summary_tool import (
     analyze_youtube_comments,
     answer_question,
     extract_video_id,
